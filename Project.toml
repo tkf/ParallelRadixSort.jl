@@ -3,6 +3,12 @@ uuid = "0471ff11-bf0e-49ef-b43a-a8b1ab3eb48f"
 authors = ["Takafumi Arakaki <aka.tkf@gmail.com>"]
 version = "0.1.0"
 
+[deps]
+ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
+ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StaticNumbers = "c5e4b96a-f99f-5557-8ed2-dc63ef9b5131"
+
 [compat]
 julia = "1"
 
