@@ -84,7 +84,11 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
         return _stablemsd_seq!(ys, xs, by, ibyte, smallsize, smallsort!, xs_mutable)
     end
 
-    chunks = Iterators.partition(xs, basesize)
+    # Split the input into at most `nthreads` parts since there's no recursion
+    # in `_countmsd!` to benefit from constructive cache sharing:
+    chunksize = max(basesize, cld(length(xs), Threads.nthreads()))
+
+    chunks = Iterators.partition(xs, chunksize)
     allcounts = [zeros(MVector{256,Int}) for _ in 1:length(chunks)]
     allpaddeds = Vector{Bool}(undef, length(chunks))
     @sync for (i, xs) in enumerate(chunks)
@@ -102,7 +106,7 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
     end
 
     @sync for (idx, exclusive_offsets) in
-              zip(Iterators.partition(1:length(xs), basesize), alloffsets)
+              zip(Iterators.partition(1:length(xs), chunksize), alloffsets)
         @spawn _scatter!(ys, xs, idx, exclusive_offsets, by, ibyte)
     end
     @DBG @check vec(reduce(hcat, alloffsets)') == cumsum(vec(reduce(hcat, allcounts)'))
