@@ -112,14 +112,14 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
         if length(idx) <= smallsize
             @spawn smallsort!(ys_chunk, by = by)
         else
-            if xs_mutable
-                xs_chunk = copyto!(view(xs, idx), ys_chunk)
+            xs_chunk = if xs_mutable
+                view(xs, idx)
             else
-                xs_chunk = copy(ys_chunk)
+                similar(ys_chunk)
             end
             @spawn _stablemsd!(
                 ys_chunk,
-                xs_chunk,
+                copyto!(xs_chunk, ys_chunk),
                 by,
                 static_if_leq(@stat(ibyte + 1), static(8)),
                 basesize,
