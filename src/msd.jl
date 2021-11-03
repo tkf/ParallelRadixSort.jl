@@ -84,15 +84,15 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
         return _stablemsd_seq!(ys, xs, by, ibyte, smallsize, smallsort!, xs_mutable)
     end
 
-    # TODO: Iterators.partition is not efficient in Julia 1.3
-    tasks = map(Iterators.partition(xs, basesize)) do xs
-        @spawn _countmsd(xs, by, ibyte)
+    chunks = Iterators.partition(xs, basesize)
+    allcounts = [zeros(MVector{256,Int}) for _ in 1:length(chunks)]
+    allpaddeds = Vector{Bool}(undef, length(chunks))
+    @sync for (i, xs) in enumerate(chunks)
+        @spawn (_, allpaddeds[i]) = _countmsd!(allcounts[i], xs, by, ibyte)
     end
-    results = map(fetch, tasks)
-    alloffsets = map(first, results)
+    alloffsets = allcounts
     @DBG allcounts = map(copy, alloffsets)
-    allpadded = all(last, results)
-    allpadded && return ys
+    all(allpaddeds) && return ys
 
     # TODO: parallel prefix
     # exclusive scan
@@ -226,11 +226,9 @@ end
     return T === Nothing
 end
 
-function _countmsd(xs, by, ibyte)
-    counts = zeros(MVector{256,Int})
-    return _countmsd!(counts, xs, by, ibyte)
-end
-
+"""
+    _countmsd!(counts, xs, by, ibyte) -> (counts, allpadded::Bool)
+"""
 function _countmsd!(counts, xs, by, ibyte)
     allpadded = true
     i = firstindex(xs)
