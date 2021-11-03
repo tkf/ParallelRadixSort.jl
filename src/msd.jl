@@ -122,17 +122,17 @@ function _stablemsd!(
     end
     @DBG @check vec(reduce(hcat, alloffsets)') == cumsum(vec(reduce(hcat, allcounts)'))
 
-    @sync _foreach_remaining_subrange(alloffsets[end]) do idx
+    _spawn_foreach_remaining_subrange(alloffsets[end]) do idx
         ys_chunk = view(ys, idx)
         if length(idx) <= smallsize
-            @spawn smallsort!(ys_chunk, by = by)
+            smallsort!(ys_chunk, by = by)
         else
             xs_chunk = if xs_mutable === Val(true)
                 view(xs, idx)
             else
                 similar(ys_chunk)
             end
-            @spawn _stablemsd!(
+            _stablemsd!(
                 ys_chunk,
                 copyto!(xs_chunk, ys_chunk),
                 by,
@@ -334,6 +334,51 @@ function _foreach_remaining_subrange(f, inclusive_offsets)
         end
         prev = i
     end
+end
+
+function _spawn_foreach_remaining_subrange(
+    f,
+    inclusive_offsets,
+    indices::UnitRange = firstindex(inclusive_offsets):lastindex(inclusive_offsets),
+)
+    @inline function maybe_nonempty_subrange(subindices::UnitRange)
+        local prev = subindices[1] == 1 ? 0 : inclusive_offsets[subindices[1]-1]
+        local curr = inclusive_offsets[subindices[end]]
+        if prev == curr || prev + 1 == curr
+            return nothing
+        else
+            return prev+1:curr
+        end
+    end
+    if length(indices) == 0
+    elseif length(indices) == 1
+        subrange = maybe_nonempty_subrange(indices)
+        if subrange !== nothing
+            f(subrange)
+        end
+    else
+        m = (last(indices) - first(indices) + 1) ÷ 2 + first(indices)
+        left = first(indices):m-1
+        right = m:last(indices)
+        leftrange = maybe_nonempty_subrange(left)
+        rightrange = maybe_nonempty_subrange(right)
+        if leftrange === nothing
+            if rightrange === nothing
+            else
+                _spawn_foreach_remaining_subrange(f, inclusive_offsets, right)
+            end
+        else
+            if rightrange === nothing
+                _spawn_foreach_remaining_subrange(f, inclusive_offsets, left)
+            else
+                @sync begin
+                    @spawn _spawn_foreach_remaining_subrange(f, inclusive_offsets, right)
+                    _spawn_foreach_remaining_subrange(f, inclusive_offsets, left)
+                end
+            end
+        end
+    end
+    return
 end
 
 @inline msd_at(x, ibyte::Integer) = sizeof(x) < ibyte ? nothing : _msd_at(x, ibyte) + 1
