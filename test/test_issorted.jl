@@ -4,12 +4,11 @@ using ParallelRadixSort
 using Test
 
 testdata_integers = [
-    ("$T[...]", rand(T(0):T(9), 100)) for
+    ("$T[...]", () -> rand(T, 2^20)) for
     T in [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64]
 ]
 
-testdata_floats =
-    [("$T[...]", rand(range(T(0), T(1), length = 11), 100)) for T in [Float32, Float64]]
+testdata_floats = [("$T[...]", () -> rand(T, 2^20)) for T in [Float32, Float64]]
 
 raw_testdata = """
 rand('a':'z', 100)
@@ -18,10 +17,11 @@ rand('a':'z', 100)
 [rand(1:10, 10) for _ in 1:100]
 """
 
-# A vector of `(label, vector)`
+# A vector of `(label, function)`
 testdata_misc = map(split(raw_testdata, "\n", keepempty = false)) do code
-    @debug "Evaluating: $code"
-    (code, Base.include_string(@__MODULE__, code))
+    fn = "() -> $code"
+    @debug "Evaluating: $fn"
+    (code, Base.include_string(@__MODULE__, fn))
 end
 
 testdata = vcat(testdata_integers, testdata_floats, testdata_misc)
@@ -32,7 +32,8 @@ testdata = vcat(testdata_integers, testdata_floats, testdata_misc)
     :ParallelMSDRadixSort,
     :ParallelStableMSDRadixSort,
 ]
-    @testset "$label" for (label, vector) in testdata
+    @testset "$label" for (label, fn) in testdata
+        vector = fn()
         alg = getfield(ParallelRadixSort, algname)
         @test issorted(sort(vector; alg = alg))
         eltype(vector) isa Number || continue
