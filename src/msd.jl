@@ -49,7 +49,7 @@ function Base.sort!(
         something(a.basesize, _default_basesize(hi - lo + 1)),
         a.smallsize,
         smallsort!,
-        true,
+        Val(true),  # xs_mutable
     )
     return xs
 end
@@ -63,7 +63,7 @@ function Base.sort!(
 )
     smallsort!(xs; by) = sort!(xs; alg = a.smallsort, by = by)
     xs = view(v, lo:hi)
-    _stablemsd_seq!(xs, copy(xs), _ord_by(o), static(1), a.smallsize, smallsort!, true)
+    _stablemsd_seq!(xs, copy(xs), _ord_by(o), static(1), a.smallsize, smallsort!, Val(true))
     return xs
 end
 
@@ -74,7 +74,16 @@ Base.Sort.Float.fpsort!(v::AbstractVector, a::RadixSortAlgorithm, o::Ordering) =
 # https://cs.stackexchange.com/a/96420
 # https://www.youtube.com/watch?v=zqs87a_7zxw
 
-function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_mutable = false)
+function _stablemsd!(
+    ys,
+    xs,
+    by::BY,
+    ibyte,
+    basesize,
+    smallsize,
+    smallsort!,
+    xs_mutable::Union{Val{true},Val{false}} = Val(false),
+) where {BY}
     @assert firstindex(xs) == 1
     @assert firstindex(ys) == 1
 
@@ -91,8 +100,10 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
     chunks = Iterators.partition(xs, chunksize)
     allcounts = [zeros(MVector{256,Int}) for _ in 1:length(chunks)]
     allpaddeds = Vector{Bool}(undef, length(chunks))
-    @sync for (i, xs) in enumerate(chunks)
-        @spawn (_, allpaddeds[i]) = _countmsd!(allcounts[i], xs, by, ibyte)
+    let allcounts = allcounts
+        @sync for (i, xs) in enumerate(chunks)
+            @spawn (_, allpaddeds[i]) = _countmsd!(allcounts[i], xs, by, ibyte)
+        end
     end
     alloffsets = allcounts
     @DBG allcounts = map(copy, alloffsets)
@@ -116,7 +127,7 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
         if length(idx) <= smallsize
             @spawn smallsort!(ys_chunk, by = by)
         else
-            xs_chunk = if xs_mutable
+            xs_chunk = if xs_mutable === Val(true)
                 view(xs, idx)
             else
                 similar(ys_chunk)
@@ -129,7 +140,7 @@ function _stablemsd!(ys, xs, by, ibyte, basesize, smallsize, smallsort!, xs_muta
                 basesize,
                 smallsize,
                 smallsort!,
-                true,
+                Val(true),
             )
         end
         return
@@ -145,7 +156,7 @@ function _stablemsd_seq!(
     ibyte,
     smallsize,
     smallsort!::SORT,
-    xs_mutable = false,
+    xs_mutable::Union{Val{true},Val{false}} = Val(false),
     bufs = [zeros(Int, 256)],
     ibuf = 1,
 ) where {BY,SORT}
@@ -174,7 +185,7 @@ function _stablemsd_seq!(
         if length(idx) <= smallsize
             smallsort!(ys_chunk, by = by)
         else
-            if xs_mutable
+            if xs_mutable === Val(true)
                 xs_chunk = copyto!(view(xs, idx), ys_chunk)
             else
                 xs_chunk = copy(ys_chunk)
@@ -186,7 +197,7 @@ function _stablemsd_seq!(
                 static_if_leq(@stat(ibyte + 1), static(8)),
                 smallsize,
                 smallsort!,
-                true,
+                Val(true),
                 bufs,
                 ibuf + 1,
             )
@@ -396,7 +407,7 @@ msdsort!(
     by = identity,
     smallsize = DEFAULT_SMALLSIZE,
     smallsort! = sort!,
-) = _stablemsd!(xs, copy(xs), by, static(1), basesize, smallsize, smallsort!, true)
+) = _stablemsd!(xs, copy(xs), by, static(1), basesize, smallsize, smallsort!, Val(true))
 
 msdsort(
     xs;
@@ -407,7 +418,7 @@ msdsort(
 ) = _stablemsd!(copy(xs), xs, by, static(1), basesize, smallsize, smallsort!)
 
 msdsort_seq!(xs; by = identity, smallsize = DEFAULT_SMALLSIZE, smallsort! = sort!) =
-    _stablemsd_seq!(xs, copy(xs), by, static(1), smallsize, smallsort!, true)
+    _stablemsd_seq!(xs, copy(xs), by, static(1), smallsize, smallsort!, Val(true))
 
 msdsort_seq(xs; by = identity, smallsize = DEFAULT_SMALLSIZE, smallsort! = sort!) =
     _stablemsd_seq!(copy(xs), xs, by, static(1), smallsize, smallsort!)
