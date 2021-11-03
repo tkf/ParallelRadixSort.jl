@@ -452,7 +452,8 @@ msdsort!(
     by = identity,
     smallsize = DEFAULT_SMALLSIZE,
     smallsort! = sort!,
-) = _stablemsd!(xs, copy(xs), by, static(1), basesize, smallsize, smallsort!, Val(true))
+    _copy = copy(xs),
+) = _stablemsd!(xs, _copy, by, static(1), basesize, smallsize, smallsort!, Val(true))
 
 msdsort(
     xs;
@@ -462,8 +463,13 @@ msdsort(
     smallsort! = sort!,
 ) = _stablemsd!(copy(xs), xs, by, static(1), basesize, smallsize, smallsort!)
 
-msdsort_seq!(xs; by = identity, smallsize = DEFAULT_SMALLSIZE, smallsort! = sort!) =
-    _stablemsd_seq!(xs, copy(xs), by, static(1), smallsize, smallsort!, Val(true))
+msdsort_seq!(
+    xs;
+    by = identity,
+    smallsize = DEFAULT_SMALLSIZE,
+    smallsort! = sort!,
+    _copy = copy(xs),
+) = _stablemsd_seq!(xs, _copy, by, static(1), smallsize, smallsort!, Val(true))
 
 msdsort_seq(xs; by = identity, smallsize = DEFAULT_SMALLSIZE, smallsort! = sort!) =
     _stablemsd_seq!(copy(xs), xs, by, static(1), smallsize, smallsort!)
