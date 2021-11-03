@@ -17,7 +17,7 @@ rand('a':'z', 100)
 [rand(1:10, 10) for _ in 1:100]
 """
 
-# A vector of `(label, function)`
+# A vector of `(datalabel, function)`
 testdata_misc = map(split(raw_testdata, "\n", keepempty = false)) do code
     fn = "() -> $code"
     @debug "Evaluating: $fn"
@@ -26,15 +26,18 @@ end
 
 testdata = vcat(testdata_integers, testdata_floats, testdata_misc)
 
-@testset "$algname" for algname in [
-    :MSDRadixSort,
-    :StableMSDRadixSort,
-    :ParallelMSDRadixSort,
-    :ParallelStableMSDRadixSort,
+@testset "$alglabel" for (alglabel, alg) in [
+    (:MSDRadixSort, ParallelRadixSort.MSDRadixSort),
+    (:StableMSDRadixSort, ParallelRadixSort.StableMSDRadixSort),
+    (:ParallelMSDRadixSort, ParallelRadixSort.ParallelMSDRadixSort),
+    (:ParallelStableMSDRadixSort, ParallelRadixSort.ParallelStableMSDRadixSort),
+    (
+        "ParallelMSDRadixSort(basesize = 2^10)",
+        ParallelRadixSort.ParallelMSDRadixSort(basesize = 2^10),
+    ),
 ]
-    @testset "$label" for (label, fn) in testdata
+    @testset "$datalabel" for (datalabel, fn) in testdata
         vector = fn()
-        alg = getfield(ParallelRadixSort, algname)
         @test issorted(sort(vector; alg = alg))
         eltype(vector) isa Number || continue
         @test issorted(sort(vector; alg = alg, rev = true); rev = true)
