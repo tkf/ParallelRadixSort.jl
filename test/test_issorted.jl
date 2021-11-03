@@ -4,8 +4,8 @@ using ParallelRadixSort
 using Test
 
 testdata_integers = [
-    ("$T[...]", rand(T(0):T(9), 100))
-    for T in [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64]
+    ("$T[...]", rand(T(0):T(9), 100)) for
+    T in [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64]
 ]
 
 testdata_floats =
