@@ -193,7 +193,7 @@ function _stablemsd_seq!(
     return ys
 end
 
-@inline function will_be_allpadded(::Type{ElType}, by::F, ibyte) where {ElType, F}
+@inline function will_be_allpadded(::Type{ElType}, by::F, ibyte) where {ElType,F}
     if ibyte == 1
         return will_be_allpadded(ElType, by, static(1))
     elseif ibyte == 2
