@@ -39,7 +39,6 @@ function Base.sort!(
     a::ParallelStableMSDRadixSortAlg,
     o::Ordering,
 )
-    smallsort!(xs; by) = sort!(xs; alg = a.smallsort, by = by)
     xs = view(v, lo:hi)
     _stablemsd!(
         xs,
@@ -48,7 +47,7 @@ function Base.sort!(
         static(1),
         something(a.basesize, _default_basesize(hi - lo + 1)),
         a.smallsize,
-        smallsort!,
+        a.smallsort,
         Val(true),  # xs_mutable
     )
     return xs
@@ -61,9 +60,16 @@ function Base.sort!(
     a::StableMSDRadixSortAlg,
     o::Ordering,
 )
-    smallsort!(xs; by) = sort!(xs; alg = a.smallsort, by = by)
     xs = view(v, lo:hi)
-    _stablemsd_seq!(xs, copy(xs), _ord_by(o), static(1), a.smallsize, smallsort!, Val(true))
+    _stablemsd_seq!(
+        xs,
+        copy(xs),
+        _ord_by(o),
+        static(1),
+        a.smallsize,
+        a.smallsort,
+        Val(true),
+    )
     return xs
 end
 
@@ -81,7 +87,7 @@ function _stablemsd!(
     ibyte,
     basesize,
     smallsize,
-    smallsort!,
+    smallsort,
     xs_mutable::Union{Val{true},Val{false}} = Val(false),
 ) where {BY}
     @assert firstindex(xs) == 1
@@ -90,7 +96,7 @@ function _stablemsd!(
     will_be_allpadded(eltype(xs), by, ibyte) && return ys
 
     if length(xs) <= basesize
-        return _stablemsd_seq!(ys, xs, by, ibyte, smallsize, smallsort!, xs_mutable)
+        return _stablemsd_seq!(ys, xs, by, ibyte, smallsize, smallsort, xs_mutable)
     end
 
     # Split the input into at most `nthreads` parts since there's no recursion
@@ -129,7 +135,7 @@ function _stablemsd!(
     _spawn_foreach_remaining_subrange(alloffsets[end], basesize) do idx
         ys_chunk = view(ys, idx)
         if length(idx) <= smallsize
-            smallsort!(ys_chunk, by = by)
+            sort!(ys_chunk, smallsort, Base.ord(isless, by, nothing, Base.Forward))
         else
             xs_chunk = if xs_mutable === Val(true)
                 view(xs, idx)
@@ -143,7 +149,7 @@ function _stablemsd!(
                 static_if_leq(@stat(ibyte + 1), static(8)),
                 basesize,
                 smallsize,
-                smallsort!,
+                smallsort,
                 Val(true),
             )
         end
@@ -160,7 +166,7 @@ function _stablemsd_seq!(
     by::BY,
     ibyte,
     smallsize,
-    smallsort!::SORT,
+    smallsort::SORT,
     xs_mutable::Union{Val{true},Val{false}} = Val(false),
     bufs = [zeros(Int, 256)],
     ibuf = 1,
@@ -188,7 +194,7 @@ function _stablemsd_seq!(
     _foreach_remaining_subrange(offsets) do idx
         ys_chunk = view(ys, idx)
         if length(idx) <= smallsize
-            smallsort!(ys_chunk, by = by)
+            sort!(ys_chunk, smallsort, Base.ord(isless, by, nothing, Base.Forward))
         else
             if xs_mutable === Val(true)
                 xs_chunk = copyto!(view(xs, idx), ys_chunk)
@@ -201,7 +207,7 @@ function _stablemsd_seq!(
                 by,
                 static_if_leq(@stat(ibyte + 1), static(8)),
                 smallsize,
-                smallsort!,
+                smallsort,
                 Val(true),
                 bufs,
                 ibuf + 1,
@@ -475,25 +481,29 @@ msdsort!(
     basesize = default_basesize(xs),
     by = identity,
     smallsize = DEFAULT_SMALLSIZE,
-    smallsort! = sort!,
+    smallsort = Base.Sort.DEFAULT_UNSTABLE,
     _copy = copy(xs),
-) = _stablemsd!(xs, _copy, by, static(1), basesize, smallsize, smallsort!, Val(true))
+) = _stablemsd!(xs, _copy, by, static(1), basesize, smallsize, smallsort, Val(true))
 
 msdsort(
     xs;
     basesize = default_basesize(xs),
     by = identity,
     smallsize = DEFAULT_SMALLSIZE,
-    smallsort! = sort!,
-) = _stablemsd!(copy(xs), xs, by, static(1), basesize, smallsize, smallsort!)
+    smallsort = Base.Sort.DEFAULT_UNSTABLE,
+) = _stablemsd!(copy(xs), xs, by, static(1), basesize, smallsize, smallsort)
 
 msdsort_seq!(
     xs;
     by = identity,
     smallsize = DEFAULT_SMALLSIZE,
-    smallsort! = sort!,
+    smallsort = Base.Sort.DEFAULT_UNSTABLE,
     _copy = copy(xs),
-) = _stablemsd_seq!(xs, _copy, by, static(1), smallsize, smallsort!, Val(true))
+) = _stablemsd_seq!(xs, _copy, by, static(1), smallsize, smallsort, Val(true))
 
-msdsort_seq(xs; by = identity, smallsize = DEFAULT_SMALLSIZE, smallsort! = sort!) =
-    _stablemsd_seq!(copy(xs), xs, by, static(1), smallsize, smallsort!)
+msdsort_seq(
+    xs;
+    by = identity,
+    smallsize = DEFAULT_SMALLSIZE,
+    smallsort = Base.Sort.DEFAULT_UNSTABLE,
+) = _stablemsd_seq!(copy(xs), xs, by, static(1), smallsize, smallsort)
