@@ -126,7 +126,7 @@ function _stablemsd!(
     @DBG @check vec(reduce(hcat, alloffsets)') == cumsum(vec(reduce(hcat, allcounts)'))
 
     free!(COUNTS_POOL, @view alloffsets[1:end-1])
-    _spawn_foreach_remaining_subrange(alloffsets[end]) do idx
+    _spawn_foreach_remaining_subrange(alloffsets[end], basesize) do idx
         ys_chunk = view(ys, idx)
         if length(idx) <= smallsize
             smallsort!(ys_chunk, by = by)
@@ -337,9 +337,13 @@ function _scatter!(ys, xs, idx, exclusive_offsets, by, ibyte)
     # `offsets` here is now inclusive scan of `counts`
 end
 
-function _foreach_remaining_subrange(f, inclusive_offsets)
-    prev = 0
-    for x in eachindex(inclusive_offsets)
+function _foreach_remaining_subrange(
+    f,
+    inclusive_offsets,
+    indices::UnitRange = firstindex(inclusive_offsets):lastindex(inclusive_offsets),
+)
+    prev = prev = indices[1] == 1 ? 0 : inclusive_offsets[indices[1]-1]
+    for x in indices
         i = @inbounds inclusive_offsets[x]
         if !(prev == i || prev + 1 == i)
             f(prev+1:i)
@@ -351,9 +355,11 @@ end
 function _spawn_foreach_remaining_subrange(
     f,
     inclusive_offsets,
+    basesize::Integer,
     indices::UnitRange = firstindex(inclusive_offsets):lastindex(inclusive_offsets),
 )
     @inline function maybe_nonempty_subrange(subindices::UnitRange)
+        isempty(subindices) && return nothing
         local prev = subindices[1] == 1 ? 0 : inclusive_offsets[subindices[1]-1]
         local curr = inclusive_offsets[subindices[end]]
         if prev == curr || prev + 1 == curr
@@ -362,31 +368,37 @@ function _spawn_foreach_remaining_subrange(
             return prev+1:curr
         end
     end
-    if length(indices) == 0
-    elseif length(indices) == 1
-        subrange = maybe_nonempty_subrange(indices)
-        if subrange !== nothing
-            f(subrange)
+
+    let subrange = maybe_nonempty_subrange(indices)
+        subrange === nothing && return
+        if length(subrange) <= basesize || length(indices) < 2
+            _foreach_remaining_subrange(f, inclusive_offsets, indices)
+            return
+        end
+    end
+
+    m = (last(indices) - first(indices) + 1) ÷ 2 + first(indices)
+    left = first(indices):m-1
+    right = m:last(indices)
+    leftrange = maybe_nonempty_subrange(left)
+    rightrange = maybe_nonempty_subrange(right)
+    if leftrange === nothing
+        if rightrange === nothing
+        else
+            _spawn_foreach_remaining_subrange(f, inclusive_offsets, basesize, right)
         end
     else
-        m = (last(indices) - first(indices) + 1) ÷ 2 + first(indices)
-        left = first(indices):m-1
-        right = m:last(indices)
-        leftrange = maybe_nonempty_subrange(left)
-        rightrange = maybe_nonempty_subrange(right)
-        if leftrange === nothing
-            if rightrange === nothing
-            else
-                _spawn_foreach_remaining_subrange(f, inclusive_offsets, right)
-            end
+        if rightrange === nothing
+            _spawn_foreach_remaining_subrange(f, inclusive_offsets, basesize, left)
         else
-            if rightrange === nothing
-                _spawn_foreach_remaining_subrange(f, inclusive_offsets, left)
-            else
-                @sync begin
-                    @spawn _spawn_foreach_remaining_subrange(f, inclusive_offsets, right)
-                    _spawn_foreach_remaining_subrange(f, inclusive_offsets, left)
-                end
+            @sync begin
+                @spawn _spawn_foreach_remaining_subrange(
+                    f,
+                    inclusive_offsets,
+                    basesize,
+                    right,
+                )
+                _spawn_foreach_remaining_subrange(f, inclusive_offsets, basesize, left)
             end
         end
     end
